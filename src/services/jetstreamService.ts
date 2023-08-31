@@ -1,8 +1,8 @@
 import {
   AckPolicy,
+  JSONCodec,
   RetentionPolicy,
   StorageType,
-  StringCodec,
   connect,
   type ConsumerConfig,
   type JetStreamClient,
@@ -12,8 +12,8 @@ import {
 } from 'nats';
 import { type ILoggerService } from '../interfaces';
 import { startupConfig } from '../interfaces/iStartupConfig';
-import { type onMessageFunction } from '../types/onMessageFunction';
 import { type IStartupService } from '../interfaces/iStartupService';
+import { type onMessageFunction } from '../types/onMessageFunction';
 
 export class JetstreamService implements IStartupService {
   server = {
@@ -28,6 +28,7 @@ export class JetstreamService implements IStartupService {
   js?: JetStreamClient;
   logger?: ILoggerService | Console;
   onMessage?: onMessageFunction;
+  jc = JSONCodec();
 
   /**
    * Initialize JetStream consumer, supplying a callback function to call every time a new message comes in.
@@ -232,16 +233,14 @@ export class JetstreamService implements IStartupService {
    * @return {*}  {Promise<void>}
    */
   async handleResponse(response: unknown, subject?: string[]): Promise<void> {
-    const sc = StringCodec();
     const publishes = [];
-    const res = JSON.stringify(response);
 
     if (this.producerStreamName) {
       if (!subject) {
-        publishes.push(this.js?.publish(this.producerStreamName, sc.encode(res)));
+        publishes.push(this.js?.publish(this.producerStreamName, this.jc.encode(response)));
       } else {
         for (const sub of subject) {
-          publishes.push(this.js?.publish(sub, sc.encode(res)));
+          publishes.push(this.js?.publish(sub, this.jc.encode(response)));
         }
       }
       await Promise.all(publishes);
@@ -258,7 +257,7 @@ export class JetstreamService implements IStartupService {
 
     for await (const message of sub) {
       console.debug(`${Date.now().toLocaleString()} S:[${message?.seq}] Q:[${message.subject}]: ${message.data.length}`);
-      const request = message.json<string>();
+      const request = this.jc.decode(message.data);
       try {
         await onMessage(request, this.handleResponse);
       } catch (error) {

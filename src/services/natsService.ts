@@ -1,8 +1,8 @@
-import { StringCodec, connect, type NatsConnection, type Subscription } from 'nats';
+import { JSONCodec, connect, type NatsConnection, type Subscription } from 'nats';
+import { type IStartupService } from '..';
 import { type ILoggerService } from '../interfaces';
 import { startupConfig } from '../interfaces/iStartupConfig';
 import { type onMessageFunction } from '../types/onMessageFunction';
-import { type IStartupService } from '..';
 
 export class NatsService implements IStartupService {
   server = {
@@ -14,6 +14,7 @@ export class NatsService implements IStartupService {
   functionName = '';
   NatsConn?: NatsConnection;
   logger?: ILoggerService | Console;
+  jc = JSONCodec();
 
   /**
    * Initialize Nats consumer, supplying a callback function to call every time a new message comes in.
@@ -66,8 +67,8 @@ export class NatsService implements IStartupService {
 
   async subscribe(subscription: Subscription, onMessage: onMessageFunction): Promise<void> {
     for await (const message of subscription) {
-      console.debug(`${Date.now().toLocaleString()} sid:[${message?.sid}] subject:[${message.subject}]: ${message.data.length}`);
-      const request = message.json<string>();
+      this.logger?.log(`${Date.now().toLocaleString()} sid:[${message?.sid}] subject:[${message.subject}]: ${message.data.length}`);
+      const request = this.jc.decode(message.data);
       await onMessage(request, this.handleResponse);
     }
   }
@@ -140,15 +141,12 @@ export class NatsService implements IStartupService {
    * @return {*}  {Promise<void>}
    */
   async handleResponse(response: unknown, subject?: string[]): Promise<void> {
-    const sc = StringCodec();
-    const res = JSON.stringify(response);
-
     if (this.producerStreamName && this.NatsConn) {
       if (!subject) {
-        this.NatsConn.publish(this.producerStreamName, sc.encode(res));
+        this.NatsConn.publish(this.producerStreamName, this.jc.encode(response));
       } else {
         for (const sub of subject) {
-          this.NatsConn.publish(sub, sc.encode(res));
+          this.NatsConn.publish(sub, this.jc.encode(response));
         }
       }
     }
