@@ -1,5 +1,5 @@
+import { type LoggerService } from '@frmscoe/frms-coe-lib';
 import { type IStartupService, type onMessageFunction } from '..';
-import { type ILoggerService } from '../interfaces';
 import { startupConfig } from '../interfaces/iStartupConfig';
 import { JetstreamService } from './jetstreamService';
 import { NatsService } from './natsService';
@@ -25,7 +25,7 @@ export class StartupFactory implements IStartupService {
   /* eslint-disable @typescript-eslint/no-misused-promises */
   async init(
     onMessage: onMessageFunction,
-    loggerService?: ILoggerService | undefined,
+    loggerService?: LoggerService | undefined,
     parConsumerStreamNames?: string[],
     parProducerStreamName?: string,
   ): Promise<boolean> {
@@ -40,7 +40,7 @@ export class StartupFactory implements IStartupService {
     return await this.startupService.init(onMessage, loggerService, parConsumerStreamNames, parProducerStreamName);
   }
 
-  async initProducer(loggerService?: ILoggerService | undefined, parProducerStreamName?: string): Promise<boolean> {
+  async initProducer(loggerService?: LoggerService | undefined, parProducerStreamName?: string): Promise<boolean> {
     process.on('uncaughtException', async (): Promise<void> => {
       await this.startupService.initProducer(loggerService, parProducerStreamName);
     });

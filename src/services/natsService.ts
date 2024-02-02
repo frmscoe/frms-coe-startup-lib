@@ -1,11 +1,9 @@
-import { connect, type NatsConnection, type Subscription } from 'nats';
-import { type ILoggerService } from '../interfaces';
+import { connect, DebugEvents, type NatsConnection, type Subscription } from 'nats';
 import { startupConfig } from '../interfaces/iStartupConfig';
 import { type onMessageFunction } from '../types/onMessageFunction';
 import { type IStartupService } from '..';
-import fastJson from 'fast-json-stringify';
-import { messageSchema } from '@frmscoe/frms-coe-lib/lib/helpers/schemas/message';
 import FRMSMessage from '@frmscoe/frms-coe-lib/lib/helpers/protobuf';
+import { type LoggerService } from '@frmscoe/frms-coe-lib';
 
 export class NatsService implements IStartupService {
   server = {
@@ -16,8 +14,7 @@ export class NatsService implements IStartupService {
   consumerStreamName: string[] | undefined;
   functionName = '';
   NatsConn?: NatsConnection;
-  logger?: ILoggerService | Console;
-  #serialise = fastJson(messageSchema as Record<string, unknown>);
+  logger?: LoggerService;
 
   /**
    * Initialize Nats consumer, supplying a callback function to call every time a new message comes in.
@@ -37,7 +34,7 @@ export class NatsService implements IStartupService {
 
   async init(
     onMessage: onMessageFunction,
-    loggerService?: ILoggerService,
+    loggerService?: LoggerService,
     parConsumerStreamNames?: string[],
     parProducerStreamName?: string,
   ): Promise<boolean> {
@@ -53,7 +50,15 @@ export class NatsService implements IStartupService {
       if (!this.NatsConn || !this.logger) return await Promise.resolve(false);
 
       // this promise indicates the client closed
-      const done = this.NatsConn.closed();
+      // this promise will resolve even if the value fulfilled is an Error
+      // we check the resulting value, and log an error if it is one
+      this.NatsConn.closed().then((value) => {
+        if (value instanceof Error) {
+          this.logger?.error(value);
+        } else {
+          this.logger?.log('bye bye nats :)');
+        }
+      });
 
       // Add consumer streams
       this.consumerStreamName = startupConfig.consumerStreamName.split(',');
@@ -63,12 +68,22 @@ export class NatsService implements IStartupService {
       }
 
       (async () => {
+        if (this.NatsConn && this.logger) {
+          for await (const status of this.NatsConn?.status()) {
+            // Ignore pings
+            if (status.type === DebugEvents.PingTimer) continue;
+
+            this.logger.log(`NATS connection status changed to ${status.type}`);
+          }
+        }
+      })();
+      (async () => {
         for (const sub of subs) {
           this.subscribe(sub, onMessage);
         }
       })();
     } catch (err) {
-      this.logger?.log(`Error communicating with NATS on: ${JSON.stringify(this.server)}, with error: ${JSON.stringify(err)}`);
+      this.logger?.error(`Error communicating with NATS on: ${JSON.stringify(this.server)}, with error: ${JSON.stringify(err)}`);
       throw err;
     }
     return true;
@@ -76,7 +91,7 @@ export class NatsService implements IStartupService {
 
   async subscribe(subscription: Subscription, onMessage: onMessageFunction): Promise<void> {
     for await (const message of subscription) {
-      console.debug(`${Date.now().toLocaleString()} sid:[${message?.sid}] subject:[${message.subject}]: ${message.data.length}`);
+      this.logger?.debug(`${Date.now().toLocaleString()} sid:[${message?.sid}] subject:[${message.subject}]: ${message.data.length}`);
       const messageDecoded = FRMSMessage.decode(message.data);
       const messageObject = FRMSMessage.toObject(messageDecoded);
       await onMessage(messageObject, this.handleResponse);
@@ -99,31 +114,27 @@ export class NatsService implements IStartupService {
    * @return {*}  {Promise<boolean>}
    */
 
-  async initProducer(loggerService?: ILoggerService, parProducerStreamName?: string): Promise<boolean> {
+  async initProducer(loggerService?: LoggerService, parProducerStreamName?: string): Promise<boolean> {
     await this.validateEnvironment(parProducerStreamName);
-    if (loggerService) {
-      this.logger = startupConfig.env === 'dev' || startupConfig.env === 'test' ? console : loggerService;
-    } else {
-      this.logger = console;
-    }
+    this.logger = loggerService;
 
     try {
       // Connect to NATS Server
-      this.logger.log(`Attempting connection to NATS, with config:\n${JSON.stringify(startupConfig, null, 4)}`);
+      this.logger?.log(`Attempting connection to NATS, with config:\n${JSON.stringify(startupConfig, null, 4)}`);
       this.NatsConn = await connect(this.server);
-      this.logger.log(`Connected to ${this.NatsConn.getServer()}`);
+      this.logger?.log(`Connected to ${this.NatsConn.getServer()}`);
       this.functionName = startupConfig.functionName.replace(/\./g, '_');
 
       // Init producer streams
       this.producerStreamName = startupConfig.producerStreamName;
       if (parProducerStreamName) this.producerStreamName = parProducerStreamName;
     } catch (error) {
-      this.logger.log(`Error communicating with NATS on: ${JSON.stringify(this.server)}, with error: ${JSON.stringify(error)}`);
+      this.logger?.error(`Error communicating with NATS on: ${JSON.stringify(this.server)}, with error: ${JSON.stringify(error)}`);
       throw error;
     }
 
     this.NatsConn.closed().then(async () => {
-      this.logger!.log('Connection Lost to NATS Server.');
+      this.logger?.log('Connection Lost to NATS Server.');
     });
 
     return true;
