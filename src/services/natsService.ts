@@ -16,6 +16,10 @@ export class NatsService implements IStartupService {
   NatsConn?: NatsConnection;
   logger?: LoggerService;
 
+  constructor(logger?: LoggerService) {
+    this.logger = logger;
+  }
+
   /**
    * Initialize Nats consumer, supplying a callback function to call every time a new message comes in.
    *
@@ -32,12 +36,7 @@ export class NatsService implements IStartupService {
    * @return {*}  {Promise<boolean>}
    */
 
-  async init(
-    onMessage: onMessageFunction,
-    loggerService?: LoggerService,
-    parConsumerStreamNames?: string[],
-    parProducerStreamName?: string,
-  ): Promise<boolean> {
+  async init(onMessage: onMessageFunction, parConsumerStreamNames?: string[], parProducerStreamName?: string): Promise<boolean> {
     try {
       // Validate additional Environmental Variables.
       if (!startupConfig.consumerStreamName && !parConsumerStreamNames?.length) {
@@ -46,7 +45,7 @@ export class NatsService implements IStartupService {
       if (parProducerStreamName) startupConfig.producerStreamName = parProducerStreamName;
       if (parConsumerStreamNames) startupConfig.consumerStreamName = String(parConsumerStreamNames);
 
-      await this.initProducer(loggerService, parProducerStreamName);
+      await this.initProducer(parProducerStreamName);
       if (!this.NatsConn || !this.logger) return await Promise.resolve(false);
 
       // this promise indicates the client closed
@@ -102,7 +101,6 @@ export class NatsService implements IStartupService {
    * Initialize Nats Producer
    *
    * @export
-   * @param {Function} loggerService
    *
    * Method to init Producer Stream. This function will not react to incomming NATS messages.
    * The Following environmental variables is required for this function to work:
@@ -114,9 +112,8 @@ export class NatsService implements IStartupService {
    * @return {*}  {Promise<boolean>}
    */
 
-  async initProducer(loggerService?: LoggerService, parProducerStreamName?: string): Promise<boolean> {
+  async initProducer(parProducerStreamName?: string): Promise<boolean> {
     await this.validateEnvironment(parProducerStreamName);
-    this.logger = loggerService;
 
     try {
       // Connect to NATS Server

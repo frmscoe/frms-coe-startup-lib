@@ -29,6 +29,10 @@ export class JetstreamService implements IStartupService {
   logger?: LoggerService;
   onMessage?: onMessageFunction;
 
+  constructor(logger?: LoggerService) {
+    this.logger = logger;
+  }
+
   /**
    * Initialize JetStream consumer, supplying a callback function to call every time a new message comes in.
    *
@@ -45,7 +49,7 @@ export class JetstreamService implements IStartupService {
    * @return {*}  {Promise<boolean>}
    */
 
-  async init(onMessage: onMessageFunction, loggerService?: LoggerService): Promise<boolean> {
+  async init(onMessage: onMessageFunction): Promise<boolean> {
     try {
       // Validate additional Environmental Variables.
       if (!startupConfig.consumerStreamName) {
@@ -53,7 +57,6 @@ export class JetstreamService implements IStartupService {
       }
 
       this.onMessage = onMessage;
-      await this.initProducer(loggerService);
       // Guard statement to ensure initProducer was successful
       if (!this.NatsConn || !this.jsm || !this.js || !this.logger) return await Promise.resolve(false);
 
@@ -73,7 +76,6 @@ export class JetstreamService implements IStartupService {
    * Initialize JetStream Producer Stream
    *
    * @export
-   * @param {Function} loggerService
    *
    * Method to init Producer Stream. This function will not react to incomming NATS messages.
    * The Following environmental variables is required for this function to work:
@@ -84,9 +86,8 @@ export class JetstreamService implements IStartupService {
    *
    * @return {*}  {Promise<boolean>}
    */
-  async initProducer(loggerService?: LoggerService): Promise<boolean> {
+  async initProducer(): Promise<boolean> {
     await this.validateEnvironment();
-    this.logger = loggerService;
 
     try {
       // Connect to NATS Server
